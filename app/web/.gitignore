@@ -1,5 +1,6 @@
 node_modules/
-dist/
+# dist/ is intentionally committed (clone & go: run the demo without Node).
+# Vite ignores it by default; this repo does not.
 *.local
 .DS_Store
 npm-debug.log*

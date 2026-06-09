@@ -118,4 +118,5 @@ def render():
               .replace("__LAKEBASE_USER__", user))
     with open(_OUT, "w") as f:
         f.write(cfg)
+    os.chmod(_OUT, 0o600)  # the rendered file holds a live OAuth token
     return host, user

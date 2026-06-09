@@ -2,6 +2,10 @@
 # Build-time deps (databricks-sql-connector, etc.) live in requirements-dev.txt.
 # Pinned to exact, tested versions (Databricks Apps security review: no
 # unpinned dependencies). Bump deliberately, not implicitly.
+# Hash pinning (--require-hashes / --hash=sha256:...) is deliberately deferred:
+# the Apps build installs from the trusted PyPI index and the exact == pins
+# above already make the set reproducible. Generate hashes with
+# `uv pip compile --generate-hashes` if a future policy requires them.
 feast[postgres]==0.63.0
 psycopg[binary]==3.2.5
 pandas==2.3.3

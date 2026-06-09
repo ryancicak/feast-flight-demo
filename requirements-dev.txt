@@ -1,17 +1,19 @@
-# Feast on Lakebase — flight delay demo
+# Feast on Lakebase — flight delay demo (build-time / offline deps).
 # Python 3.11–3.13.  A Databricks CLI (profile with workspace access) is a
 # system prerequisite, not a pip dep.
+# Pinned to exact, tested versions so the offline-build toolchain is as
+# reproducible as the deployed runtime (requirements.txt).
 
 feast[postgres]==0.63.0      # feature store + Postgres (Lakebase) online store
-psycopg[binary]>=3.2         # Postgres driver Feast 0.63 uses for the online store
+psycopg[binary]==3.2.5       # Postgres driver Feast 0.63 uses for the online store
 
 # Offline build runs ON Databricks (Unity Catalog + serverless SQL warehouse);
 # these drive the warehouse and pull the small aggregated result back.
-databricks-sql-connector>=4.0
-databricks-sdk>=0.20
-pyarrow>=14
+databricks-sql-connector==4.2.6
+databricks-sdk==0.114.0
+pyarrow==24.0.0
 
 # Dashboard backend (the React frontend in app/web/ uses npm — see app/web/package.json)
-fastapi>=0.110
-uvicorn[standard]>=0.27
-pandas>=2.0
+fastapi==0.136.3
+uvicorn[standard]==0.34.0
+pandas==2.3.3

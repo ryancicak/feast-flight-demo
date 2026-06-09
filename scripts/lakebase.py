@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import psycopg
+from psycopg import sql
 
 PROFILE = os.environ.get("LAKEBASE_PROFILE", "feast-demo")
 PROJECT = os.environ.get("LAKEBASE_PROJECT", "feast-flight-demo")  # Lakebase project backing the online store
@@ -84,6 +85,7 @@ def render():
               .replace("__LAKEBASE_USER__", USER))
     with open(out, "w") as f:
         f.write(cfg)
+    os.chmod(out, 0o600)  # the rendered file holds a live OAuth token
     print(f"rendered {out}\n  host={host}\n  user={USER}\n  token=<{len(token)} chars, fresh>")
 
 
@@ -95,7 +97,9 @@ def setup_db():
     if cur.fetchone():
         print(f"database '{DB}' already exists")
     else:
-        cur.execute(f'CREATE DATABASE "{DB}"')
+        # Identifiers are operator/identity-derived, not request input, but we
+        # still quote them via psycopg.sql rather than f-string interpolation.
+        cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DB)))
         print(f"created database '{DB}'")
     admin.close()
 
@@ -104,10 +108,11 @@ def setup_db():
     cc.execute("SELECT current_user, current_database()")
     who, db = cc.fetchone()
     print(f"connected as {who} to {db}")
-    cc.execute(f'GRANT ALL PRIVILEGES ON DATABASE "{DB}" TO "{USER}"')
-    cc.execute(f'GRANT ALL ON SCHEMA public TO "{USER}"')
-    cc.execute(f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "{USER}"')
-    cc.execute(f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "{USER}"')
+    u, d = sql.Identifier(USER), sql.Identifier(DB)
+    cc.execute(sql.SQL("GRANT ALL PRIVILEGES ON DATABASE {} TO {}").format(d, u))
+    cc.execute(sql.SQL("GRANT ALL ON SCHEMA public TO {}").format(u))
+    cc.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {}").format(u))
+    cc.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO {}").format(u))
     cc.execute("CREATE TABLE IF NOT EXISTS _access_check (id int)")
     cc.execute("DROP TABLE _access_check")
     print("verified: can CREATE/DROP in feast.public  ->  full access OK")

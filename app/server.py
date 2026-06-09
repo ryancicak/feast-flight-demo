@@ -31,6 +31,19 @@ async def server_timing(request: Request, call_next):
     return response
 
 
+@app.on_event("startup")
+def _prewarm():
+    """Warm the Lakebase connection at boot so the first real score is hot, not a
+    cold ~1.5s. Matters most for a shared instance that many people hit at once.
+    """
+    try:
+        data._store()                               # Feast store + warm pool + fast_score.warm()
+        data.score_fast("ORD", "LAX", "AA", 2007)   # warm the default single-query path
+        print("[startup] pre-warmed Lakebase connection", flush=True)
+    except Exception as e:  # never let warm-up block the app from starting
+        print(f"[startup] pre-warm skipped (non-fatal): {e}", flush=True)
+
+
 @app.get("/api/meta")
 def meta():
     return data.meta()

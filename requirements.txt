@@ -1,0 +1,9 @@
+# Runtime deps for the Databricks App (FastAPI server over Feast + Lakebase).
+# Build-time deps (databricks-sql-connector, etc.) live in requirements-dev.txt.
+feast[postgres]==0.63.0
+psycopg[binary]>=3.2
+pandas>=2.0
+pyarrow>=14
+fastapi>=0.110
+uvicorn[standard]>=0.27
+databricks-sdk>=0.30

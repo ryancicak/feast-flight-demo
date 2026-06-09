@@ -1,0 +1,17 @@
+.venv/
+.git/
+.databricks/
+__pycache__/
+*.pyc
+node_modules/
+app/web/node_modules/
+app/web/src/
+app/web/public/
+app/web/index.html
+app/web/package.json
+app/web/package-lock.json
+app/web/vite.config.*
+app/web/tsconfig*.json
+app/web/.gitignore
+notebooks/
+.DS_Store

@@ -1,0 +1,17 @@
+# Feast on Lakebase — flight delay demo
+# Python 3.11–3.13.  A Databricks CLI (profile with workspace access) is a
+# system prerequisite, not a pip dep.
+
+feast[postgres]==0.63.0      # feature store + Postgres (Lakebase) online store
+psycopg[binary]>=3.2         # Postgres driver Feast 0.63 uses for the online store
+
+# Offline build runs ON Databricks (Unity Catalog + serverless SQL warehouse);
+# these drive the warehouse and pull the small aggregated result back.
+databricks-sql-connector>=4.0
+databricks-sdk>=0.20
+pyarrow>=14
+
+# Dashboard backend (the React frontend in app/web/ uses npm — see app/web/package.json)
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pandas>=2.0

@@ -1,0 +1,12 @@
+.venv/
+.databricks/
+.DS_Store
+feature_repo/feature_store.yaml
+feature_repo/data/registry.db
+feature_repo/data/online_store.db
+__pycache__/
+*.pyc
+*.tsbuildinfo
+app/web/node_modules/
+app/web/.vite/
+# app/web/dist is intentionally committed so the demo runs without Node (clone & go)

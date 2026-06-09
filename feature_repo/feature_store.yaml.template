@@ -1,0 +1,22 @@
+project: flight_demo
+provider: local
+registry: data/registry.db
+entity_key_serialization_version: 3
+offline_store:
+  type: file
+online_store:
+  type: postgres
+  host: __LAKEBASE_HOST__
+  port: 5432
+  database: feast
+  db_schema: public
+  user: __LAKEBASE_USER__
+  password: __LAKEBASE_TOKEN__
+  sslmode: require
+  # Pool so the 4 per-feature-view reads that get_online_features_async fans out
+  # (origin/carrier/route/weather) hit Lakebase concurrently instead of
+  # serializing on one connection. min_conn warms connections at open() so the
+  # first scored flight doesn't pay 4 cold TLS handshakes.
+  conn_type: pool
+  min_conn: 4
+  max_conn: 10

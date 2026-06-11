@@ -9,8 +9,11 @@
 ![Built on Databricks](https://img.shields.io/badge/Built%20on-Databricks-FF3621.svg)
 ![Offline store](https://img.shields.io/badge/Offline%20store-File-1f6feb.svg)
 ![Online store](https://img.shields.io/badge/Online%20store-Lakebase%20Postgres-FF3621.svg)
+[![Watch the demo](https://img.shields.io/badge/Watch%20the%20demo-YouTube-FF0000?logo=youtube&logoColor=white)](https://youtu.be/P2P2wP4cA7s)
 
-![The dashboard scoring ORD to LAX, route arc on the US map, reading from Lakebase in about 7 ms](docs/hero.png)
+[![The dashboard scoring ORD to LAX, route arc on the US map, reading from Lakebase in about 7 ms](docs/hero.png)](https://youtu.be/P2P2wP4cA7s)
+
+**[Watch the 8-minute walkthrough](https://youtu.be/P2P2wP4cA7s)** — the cold start, the live scoring, and the one-block swap.
 
 </div>
 
@@ -86,7 +89,7 @@ It works on a phone.
 Real, tested commands.
 
 ```bash
-git clone <repo> && cd feast-flight-demo
+git clone https://github.com/ryancicak/feast-flight-demo.git && cd feast-flight-demo
 python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 export LAKEBASE_PROFILE=your-cli-profile
 databricks postgres create-project feast-flight-demo -p "$LAKEBASE_PROFILE"   # one time

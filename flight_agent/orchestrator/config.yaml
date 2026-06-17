@@ -1,0 +1,207 @@
+# flight-ops-orchestrator -- a Polly-style cross-vendor orchestrator that drives
+# the flight-ops-agent under independent, different-vendor review.
+#
+# This is the harness you'd record for the video's "agent supervising agents"
+# beat: one Claude-SDK brain that delegates flight-ops questions to the
+# flight-ops analyst (which holds the live Lakebase feature tools), then has a
+# DIFFERENT vendor independently sanity-check the analyst's answer before it is
+# returned. It writes no analysis itself -- it routes and verifies.
+#
+# Two distinct policy mechanisms are used here, matching upstream:
+#   - the SUB-AGENTS carry the builtin `policies:` (cost + OS approval), declared
+#     with handler: + factory_params (see flight-ops-agent.yaml)
+#   - the ORCHESTRATOR carries runner-side `guardrails.policies`, declared with
+#     function: {path, arguments} -- the omnigent.inner.nessie.* mechanism layer,
+#     exactly as examples/polly/config.yaml does
+#
+# Run it (after `omnigent setup`):
+#   omnigent run flight_agent/orchestrator/flight-ops-orchestrator.yaml \
+#     -p "Is AA risky on ORD->LAX in 2007? Verify before you answer."
+spec_version: 1
+name: flight-ops-orchestrator
+description: >-
+  Cross-vendor orchestrator for the flight-delay demo. Delegates flight scoring
+  and trend questions to the flight-ops analyst sub-agent (which owns the live
+  Lakebase feature tools), then routes the analyst's answer to a different-vendor
+  reviewer for an independent check before returning it.
+
+# Allow the orchestrator to author and launch self-defined child sessions in
+# addition to the declared sub-agents (parity with Polly's spawn: true).
+spawn: true
+
+# Orchestrator brain on the Claude Agent SDK, on a Databricks-hosted model.
+executor:
+  type: omnigent
+  context_window: 1000000
+  config:
+    harness: claude-sdk
+
+prompt: |
+  You are flight-ops-orchestrator. You do NOT score flights or read features
+  yourself -- you delegate every flight-data question to the `flight_ops`
+  sub-agent (it holds the live Lakebase feature tools) and then VERIFY its
+  answer with an independent, different-vendor reviewer before you return
+  anything to the user.
+
+  Flow for a flight-data question:
+    1. Dispatch `flight_ops` with the user's question. It will call its tools
+       (score_flight / carrier_leaderboard / airport_delay_trend /
+       list_entities) and return a grounded answer with the measured Lakebase
+       latency_ms.
+    2. Dispatch `reviewer` -- a DIFFERENT vendor than the analyst -- with ONLY
+       the analyst's answer and the original question. The reviewer judges
+       whether the conclusion follows from the cited feature values and the year
+       in the entity key; it does NOT re-run tools or edit anything, it reports.
+    3. If the reviewer flags a problem, re-dispatch `flight_ops` to correct it,
+       then return the reconciled answer noting it passed cross-vendor review.
+
+  Cross-vendor verification is the point: the reviewer must be a different model
+  vendor than the analyst, so the check is genuinely independent. Keep your own
+  output to routing + the final reconciled answer; let the analyst own the
+  numbers.
+
+async: true
+cancellable: true
+timers: true
+
+# The orchestrator only routes; it doesn't touch the repo's code. Unsandboxed
+# caller process, same as Polly.
+os_env:
+  type: caller_process
+  cwd: .
+  sandbox:
+    type: none
+
+tools:
+  # The flight-ops analyst, cloned from the single-file agent next door but
+  # pinned to Claude here so the reviewer below can be a different vendor. It
+  # inherits this orchestrator's OS env and keeps its OWN builtin policies
+  # (cost + OS-tool approval) so the live cost/approval gates still apply to the
+  # worker that actually does the Lakebase reads.
+  flight_ops:
+    type: agent
+    description: >-
+      Flight-delay analyst. Scores flights live from Lakebase via Feast and
+      answers trend/leaderboard questions, grounded in the feature reads.
+    prompt: |
+      You are the flight-delay analyst. Answer ONLY from your tools
+      (score_flight / carrier_leaderboard / airport_delay_trend /
+      list_entities), which read the Lakebase Postgres online store via Feast.
+      Default to score_flight mode "fast" and always report the returned
+      latency_ms. Ground every claim in the actual feature values and cite the
+      year, since year is part of the entity key.
+    executor:
+      harness: claude-sdk
+      model: databricks-claude-opus-4-8
+      auth:
+        type: databricks
+        profile: e2-demo-west
+    os_env: inherit
+    tools:
+      list_entities:
+        type: function
+        description: List scorable airports, carriers, and years.
+        callable: flight_agent.tools.flight_tools.list_entities
+        parameters:
+          type: object
+          properties: {}
+      score_flight:
+        type: function
+        description: >-
+          Score one flight live from Lakebase via Feast; returns the feature
+          breakdown plus the measured online latency_ms.
+        callable: flight_agent.tools.flight_tools.score_flight
+        parameters:
+          type: object
+          properties:
+            origin: {type: string, description: 'Origin airport code, e.g. "ORD".'}
+            dest: {type: string, description: 'Destination airport code, e.g. "LAX".'}
+            carrier: {type: string, description: 'Carrier code, e.g. "AA".'}
+            year: {type: integer, description: 'Flight year (1988-2007).'}
+            mode:
+              type: string
+              enum: [fast, feast]
+              description: '"fast" = one query (~7 ms, default); "feast" = per-view.'
+          required: [origin, dest, carrier, year]
+      carrier_leaderboard:
+        type: function
+        description: Carrier on-time leaderboard for a year.
+        callable: flight_agent.tools.flight_tools.carrier_leaderboard
+        parameters:
+          type: object
+          properties:
+            year: {type: integer, description: 'Year to rank (1988-2007).'}
+          required: [year]
+      airport_delay_trend:
+        type: function
+        description: Year-over-year delay trend for one airport.
+        callable: flight_agent.tools.flight_tools.airport_delay_trend
+        parameters:
+          type: object
+          properties:
+            code: {type: string, description: 'Airport code, e.g. "ORD".'}
+          required: [code]
+    # Live builtin guardrails on the worker that does the real reads.
+    policies:
+      cost_budget:
+        type: function
+        handler: omnigent.policies.builtins.cost.cost_budget
+        factory_params:
+          max_cost_usd: 5.00
+          ask_thresholds_usd: [1.00, 3.00]
+          expensive_models: ["opus"]
+      approve_os_tools:
+        type: function
+        handler: omnigent.policies.builtins.safety.ask_on_os_tools
+
+  # The independent reviewer. DIFFERENT vendor than the analyst (the OpenAI Codex
+  # harness) so the cross-vendor check is real. Read-only: it judges the analyst's
+  # answer, it does not score flights itself.
+  # harness: codex = the OpenAI Codex CLI (installed via `brew install --cask codex`,
+  # codex-cli 0.139.0, which exposes `codex app-server`). Omnigent's codex executor
+  # auto-builds the Databricks gateway config from ~/.databrickscfg and refreshes the
+  # token, defaulting to databricks-gpt-5-5 (verified served on e2-demo-west). The
+  # end-to-end codex->Databricks route is the one thing to confirm on first run;
+  # fallback if it misbehaves: harness: openai-agents on the same model (bundled).
+  reviewer:
+    type: agent
+    description: >-
+      Independent, different-vendor reviewer. Judges whether the analyst's
+      answer follows from its cited feature values and year; reports issues,
+      never edits or re-runs tools.
+    prompt: |
+      You are an independent reviewer from a different model vendor than the
+      analyst. You are given the user's question and the analyst's answer. Judge
+      ONLY whether the conclusion is supported by the feature values it cites
+      and the year it used (year is part of the entity key). Do not re-score or
+      call any tools. Report: supported / not supported, and any specific gap.
+    executor:
+      harness: codex
+      model: databricks-gpt-5-5
+      auth:
+        type: databricks
+        profile: e2-demo-west
+    pass_history: true
+
+# Runner-side mechanism-layer guardrails on the ORCHESTRATOR (parity with
+# examples/polly/config.yaml: function: {path, arguments}, the
+# omnigent.inner.nessie.* layer). Distinct from the builtin `policies:` the
+# sub-agents carry above.
+guardrails:
+  # Keep an ASK window open long enough for a human to step away during a take.
+  ask_timeout: 86400
+  policies:
+    spawn_bounds:
+      type: function
+      function:
+        path: omnigent.inner.nessie.policies.spawn_bounds
+        arguments:
+          # One analyst + one reviewer per turn is plenty for this flow.
+          max_dispatches_per_turn: 4
+          dispatch_tools: [sys_session_send, sys_session_create]
+    headless_subagent_purpose_guard:
+      type: function
+      function:
+        path: omnigent.inner.nessie.policies.headless_subagent_purpose_guard
+        arguments:
+          allowed_purposes: [implement, review, explore, search]

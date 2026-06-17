@@ -187,6 +187,21 @@ def score(req: ScoreReq):
     return JSONResponse(fn(req.origin, req.dest, req.carrier, req.year))
 
 
+class AgentReq(BaseModel):
+    message: str
+
+
+@app.post("/api/agent")
+def agent_endpoint(req: AgentReq):
+    """Tool-calling agent: a Databricks-hosted Claude model (Foundation Model API)
+    reasons over the LIVE Lakebase feature store via score_flight / list_entities /
+    carrier_leaderboard / airport_delay_trend. Returns {"answer", "reads"} where
+    `reads` carries each score_flight call's measured Lakebase latency_ms, so the
+    UI can always surface the read latency (in-region this is ~7ms)."""
+    import agent  # lazy: isolate any agent/FM-API issue to THIS route, never app startup
+    return JSONResponse(agent.run_agent(req.message))
+
+
 # ---- serve the built React app (path-traversal guarded) --------------------
 # No CORS middleware: the SPA is served from this same origin, so the browser
 # never makes a cross-origin call and we grant none (no wildcard, no creds).

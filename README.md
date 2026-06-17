@@ -13,7 +13,7 @@
 
 [![The dashboard scoring ORD to LAX, route arc on the US map, reading from Lakebase in about 7 ms](docs/hero.png)](https://youtu.be/P2P2wP4cA7s)
 
-**[Watch the 8-minute walkthrough](https://youtu.be/P2P2wP4cA7s)** — the cold start, the live scoring, and the one-block swap.
+**[Watch the 8-minute walkthrough](https://youtu.be/P2P2wP4cA7s)** - the cold start, the live scoring, and the one-block swap.
 
 </div>
 

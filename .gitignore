@@ -10,3 +10,7 @@ __pycache__/
 app/web/node_modules/
 app/web/.vite/
 # app/web/dist is intentionally committed so the demo runs without Node (clone & go)
+# omnigent scaffold: never commit a filled-in env file (Lakebase tokens are minted
+# at runtime, never stored). Templates (*.env.example) stay tracked.
+*.env
+!*.env.example

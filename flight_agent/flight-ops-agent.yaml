@@ -1,0 +1,164 @@
+# flight-ops-agent -- a custom Omnigent agent over the flight-delay demo.
+#
+# It exposes this repo's live Lakebase feature serving (Feast -> Lakebase
+# Postgres online store, ~7 ms/score in region) as agent TOOLS, so an analyst
+# can ask "is AA ORD->LAX risky in 2007?" in natural language and the agent
+# scores it live, reasons over the features, and reports the measured latency.
+#
+# Run it (after `omnigent setup` -- see omnigent/README.md):
+#   omnigent run flight_agent/flight-ops-agent.yaml \
+#     -p "Score AA from ORD to LAX in 2007 and explain the risk."
+#
+# Spec shape verified against the upstream Omnigent single-file agent spec
+# (docs/AGENT_YAML_SPEC.md) and the builtin policy registry (docs/POLICIES.md):
+#   - flat executor: harness / model / auth: {type, profile}
+#   - type: function tools reference a dotted Python `callable:` and declare
+#     their JSON-schema under `parameters:` (NOT inferred from the signature)
+#   - top-level `policies:` use `handler:` + `factory_params:` (+ optional `on:`)
+name: flight-ops-agent
+description: >-
+  Flight-delay operations analyst. Scores individual flights live from the
+  Lakebase Postgres online store via Feast, pulls carrier leaderboards and
+  airport delay trends, and answers operational questions grounded in those
+  feature reads.
+
+prompt: |
+  You are flight-ops-agent, an analyst for a 20-year US flight-delay feature
+  store (1988-2007). Your data comes ONLY from the tools below, which read this
+  demo's Feast feature definitions from a Lakebase Postgres online store; never
+  invent delay numbers from prior knowledge.
+
+  Tools:
+    - list_entities: the airport codes, carrier codes, and years that can be
+      scored. Call this FIRST when you are unsure an airport/carrier/year is
+      valid, so you score real entity keys instead of guessing.
+    - score_flight: the live, per-flight read. `mode: "fast"` is the single
+      Lakebase-query path (~7 ms in region); use it by default. Use
+      `mode: "feast"` only to demonstrate the per-view get_online_features path.
+      Always surface the returned `latency_ms` -- the measured online round-trip
+      -- when you report a score; it is the point of the demo.
+    - carrier_leaderboard: whole-fleet carrier ranking for a year (offline view).
+    - airport_delay_trend: one airport's year-over-year delay series.
+
+  When you score a flight, ground your explanation in the actual feature values
+  the read returned (origin delay rate, carrier delay rate, route delay rate,
+  weather counters, the blended_delay_risk) and cite the year, since the year is
+  part of the entity key. Be concise and quantitative.
+
+# Brain + provider. Point the harness at a Databricks-hosted Claude model and
+# authenticate via a Databricks profile (set up once with `omnigent setup` /
+# `databricks auth login`). Change `model`/`profile` to match your workspace;
+# `oss` is just the conventional profile name used in the upstream examples.
+executor:
+  harness: claude-sdk
+  model: databricks-claude-opus-4-8
+  auth:
+    type: databricks
+    profile: e2-demo-west
+
+async: true
+cancellable: true
+
+# Local OS tools are enabled so the agent can read this repo (e.g. inspect
+# feature definitions in feature_repo/) while it reasons -- and so the OS-tool
+# approval policy below has something concrete to gate.
+# sandbox: none -- the default darwin_seatbelt sandbox BLOCKS the claude-sdk harness
+# from launching the `claude` binary (~/.local/bin/claude -> PermissionError on
+# spawn), which kills the model connection. We disable OS-level isolation here
+# (same as the orchestrator). The ask_on_os_tools policy below still gates any
+# file/shell access at the policy layer, so the human-approval beat still works.
+os_env:
+  type: caller_process
+  cwd: .
+  sandbox:
+    type: none
+
+tools:
+  list_entities:
+    type: function
+    description: >-
+      List the airports, carriers, and years available in the online store.
+      Call first to validate entity keys before scoring.
+    callable: flight_agent.tools.flight_tools.list_entities
+    parameters:
+      type: object
+      properties: {}
+
+  score_flight:
+    type: function
+    description: >-
+      Score one flight live from the Lakebase Postgres online store via Feast.
+      Returns the full feature breakdown plus the measured online latency_ms.
+    callable: flight_agent.tools.flight_tools.score_flight
+    parameters:
+      type: object
+      properties:
+        origin:
+          type: string
+          description: Origin airport code, e.g. "ORD".
+        dest:
+          type: string
+          description: Destination airport code, e.g. "LAX".
+        carrier:
+          type: string
+          description: Carrier code, e.g. "AA".
+        year:
+          type: integer
+          description: Flight year (1988-2007); part of the entity key.
+        mode:
+          type: string
+          enum: [fast, feast]
+          description: >-
+            "fast" = one Lakebase query (~7 ms, default); "feast" =
+            get_online_features (one read per view). Same result.
+      required: [origin, dest, carrier, year]
+
+  carrier_leaderboard:
+    type: function
+    description: >-
+      Carrier on-time leaderboard for a year, best-to-worst average delay
+      (offline whole-fleet view).
+    callable: flight_agent.tools.flight_tools.carrier_leaderboard
+    parameters:
+      type: object
+      properties:
+        year:
+          type: integer
+          description: Year to rank (1988-2007).
+      required: [year]
+
+  airport_delay_trend:
+    type: function
+    description: Year-over-year delay trend for one airport.
+    callable: flight_agent.tools.flight_tools.airport_delay_trend
+    parameters:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Airport code, e.g. "ORD".
+      required: [code]
+
+# Guardrails. Two builtin policies, declared per docs/POLICIES.md
+# (handler: dotted path to the builtin + factory_params for the configurable
+# one). They evaluate in declaration order.
+policies:
+  # LIVE COST POLICY. Soft ASK at $1 and $3 of cumulative LLM spend; at the $5
+  # hard limit it becomes a downgrade gate -- it DENYs further turns/tool calls
+  # only while the session is on an expensive model (here, Opus), prompting a
+  # switch to a cheaper one, and allows them again after the switch.
+  cost_budget:
+    type: function
+    handler: omnigent.policies.builtins.cost.cost_budget
+    factory_params:
+      max_cost_usd: 5.00
+      ask_thresholds_usd: [1.00, 3.00]
+      expensive_models: ["opus"]
+
+  # OS-TOOL APPROVAL POLICY. Requires explicit user approval before any
+  # sys_os_read / sys_os_write / sys_os_edit / sys_os_shell call. Direct
+  # callable -- no factory_params. Pairs with the os_env above so any local
+  # file/shell access the agent attempts pauses for a human ASK.
+  approve_os_tools:
+    type: function
+    handler: omnigent.policies.builtins.safety.ask_on_os_tools

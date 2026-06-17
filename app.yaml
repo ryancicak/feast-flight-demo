@@ -14,8 +14,8 @@ env:
   - name: ENDPOINT_NAME
     value: "projects/feast-flight-demo/branches/production/endpoints/primary"
   # CSRF on POST /api/score is validated by matching the request Origin against
-  # the Host header. If your Apps proxy rewrites Host to an internal value and
-  # same-origin scoring starts returning 403, set this to the app's public URL
-  # (comma-separated for more than one), e.g.:
-  #   - name: DEMO_ALLOWED_ORIGINS
-  #     value: "https://flight-delay-<id>.<region>.databricksapps.com"
+  # the Host header. The Databricks Apps proxy rewrites Host to an internal
+  # value, so set this to the app's own public URL (comma-separated for more
+  # than one). Update it to your app's URL when deploying to a new workspace.
+  - name: DEMO_ALLOWED_ORIGINS
+    value: "https://flight-delay-2556758628403379.aws.databricksapps.com"
